@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoFlow</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #14161d;
+    --panel-2: #191c24;
+    --border: #262a35;
+    --text: #eef0f4;
+    --muted: #8b93a3;
+    --accent: #6c8cff;
+    --accent-2: #8f6cff;
+    --success: #3ecf8e;
+    --fail: #ff6b6b;
+    --warn: #ffb454;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', -apple-system, Roboto, sans-serif;
+    background: radial-gradient(circle at top left, #161a24, var(--bg) 60%);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    backdrop-filter: blur(6px);
+  }
+  header .brand { display: flex; align-items: center; gap: 10px; }
+  header .brand .logo {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header .user-info { color: var(--muted); font-size: 13px; }
+  nav {
+    display: flex;
+    gap: 4px;
+    padding: 0 28px;
+    border-bottom: 1px solid var(--border);
+  }
+  nav button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    padding: 13px 18px;
+    cursor: pointer;
+    font-size: 14px;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s;
+  }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+  nav button:hover { color: var(--text); }
+  main { max-width: 760px; margin: 0 auto; padding: 28px; }
+  .panel {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px;
+    margin-bottom: 18px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  }
+  .panel h2 { font-size: 15px; margin: 0 0 6px 0; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  .panel p.hint { color: var(--muted); font-size: 12.5px; margin: 0 0 16px 0; line-height: 1.5; }
+  label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 5px; margin-top: 12px; font-weight: 500; }
+  input, select, textarea {
+    width: 100%;
+    padding: 10px 12px;
+    background: #0d0f14;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 60px; }
+  button.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: white;
+    border: none;
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: 16px;
+  }
+  button.primary:hover { opacity: 0.9; }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 7px 14px;
+    border-radius: 7px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.secondary:hover { border-color: var(--accent); }
+  button.link {
+    background: none; border: none; color: var(--accent);
+    cursor: pointer; font-size: 13px; padding: 0;
+  }
+  button.danger-outline { color: var(--fail); border-color: rgba(255,107,107,0.3); }
+  .msg { font-size: 13px; margin-top: 12px; padding: 10px 12px; border-radius: 8px; display: none; }
+  .msg.show { display: block; }
+  .msg.ok { background: rgba(62,207,142,0.12); color: var(--success); }
+  .msg.err { background: rgba(255,107,107,0.12); color: var(--fail); }
+  .workflow-card { border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 12px; background: rgba(255,255,255,0.015); }
+  .workflow-card .row { display: flex; justify-content: space-between; align-items: flex-start; }
+  .workflow-card .name { font-weight: 600; font-size: 14.5px; }
+  .workflow-card .meta { color: var(--muted); font-size: 12px; margin-top: 5px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { background: rgba(108,140,255,0.12); color: var(--accent); padding: 2px 9px; border-radius: 20px; font-size: 11px; }
+  .workflow-card .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .badge { font-size: 11px; padding: 3px 9px; border-radius: 20px; font-weight: 500; }
+  .badge.success { background: rgba(62,207,142,0.15); color: var(--success); }
+  .badge.failed { background: rgba(255,107,107,0.15); color: var(--fail); }
+  .badge.running { background: rgba(108,140,255,0.15); color: var(--accent); }
+  .log-row { font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); padding: 10px 0; }
+  .hidden { display: none !important; }
+  .row-2 { display: flex; gap: 12px; }
+  .row-2 > div { flex: 1; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 0; }
+  .action-block {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    margin-top: 12px;
+    background: rgba(255,255,255,0.02);
+    position: relative;
+  }
+  .action-block .action-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .action-block .action-header span { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .remove-action { background: none; border: none; color: var(--fail); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 6px; }
+  .status-row { display: flex; align-items: center; gap: 10px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status-dot.on { background: var(--success); }
+  .status-dot.off { background: var(--muted); }
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+  a.plain { color: var(--accent); text-decoration: none; }
+
+  /* Phone-sized screens */
+  @media (max-width: 640px) {
+    header { padding: 14px 16px; }
+    header .user-info { display: none; }  /* saves space; email isn't essential on a phone header */
+    header h1 { font-size: 15px; }
+    nav { padding: 0 16px; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+    nav button { padding: 12px 14px; font-size: 13.5px; }
+    main { padding: 16px; }
+    .panel { padding: 16px; border-radius: 10px; }
+    .row-2 { flex-direction: column; gap: 0; }
+    button.primary { width: 100%; }
+    .workflow-card .actions { flex-wrap: wrap; }
+    .workflow-card .actions button { flex: 1; min-width: 90px; }
+    .status-row { flex-wrap: wrap; }
+    input, select, textarea { font-size: 16px; }  /* prevents iOS Safari auto-zoom on focus */
+    #auth-main { margin-top: 40px !important; }
+  }
+</style>
+</head>
+<body>
+
+<div id="auth-screen">
+  <main style="max-width:380px; margin-top:100px; padding-left:16px; padding-right:16px;" id="auth-main">
+    <div class="panel">
+      <h2 id="auth-title">Log in to AutoFlow</h2>
+      <label>Email</label>
+      <input type="email" id="auth-email" placeholder="you@example.com">
+      <label>Password</label>
+      <input type="password" id="auth-password" placeholder="********">
+      <button class="primary" id="auth-submit" onclick="login()" style="width:100%;">Log in</button>
+      <div class="msg" id="auth-msg"></div>
+      <p style="text-align:center; margin-top:16px; font-size:13px; color:var(--muted);">
+        <span id="auth-toggle-text">No account?</span>
+        <a href="#" id="auth-toggle-link" onclick="toggleAuthMode(); return false;" class="plain">Register</a>
+      </p>
+    </div>
+  </main>
+</div>
+
+<div id="app-screen" class="hidden">
+  <header>
+    <div class="brand">
+      <div class="logo">AF</div>
+      <h1>AutoFlow</h1>
+    </div>
+    <div>
+      <span class="user-info" id="user-email"></span>
+      <button class="secondary" style="margin-left:12px;" onclick="logout()">Log out</button>
+    </div>
+  </header>
+  <nav>
+    <button class="tab-btn active" data-tab="workflows" onclick="switchTab('workflows')">Workflows</button>
+    <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">Settings</button>
+  </nav>
+
+  <main>
+    <div id="tab-workflows">
+      <div class="panel">
+        <h2>Create a new workflow</h2>
+        <p class="hint">Pick what starts it (trigger), then what happens (one or more actions, run in order).</p>
+
+        <label>Workflow name</label>
+        <input type="text" id="wf-name" placeholder="e.g. College Notice Tracker">
+
+        <label>Trigger</label>
+        <select id="wf-trigger-type" onchange="renderTriggerFields()">
+          <option value="schedule">Schedule - run every N minutes</option>
+          <option value="gmail">Gmail - new email arrives</option>
+        </select>
+        <div id="trigger-fields"></div>
+
+        <div class="divider"></div>
+
+        <label style="margin-top:0;">Actions (run in order)</label>
+        <div id="action-list"></div>
+        <button class="link" onclick="addAction()" style="margin-top:10px;">+ Add another action</button>
+
+        <div>
+          <button class="primary" onclick="createWorkflow()">Create workflow</button>
+        </div>
+        <div class="msg" id="wf-create-msg"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Your workflows</h2>
+        <div id="workflow-list"><div class="empty">Loading...</div></div>
+      </div>
+    </div>
+
+    <div id="tab-settings" class="hidden">
+      <div class="panel">
+        <h2>Telegram</h2>
+        <p class="hint">One tap connects you to the shared AutoFlow bot - no token copying needed.</p>
+        <div class="status-row" style="margin-top:10px;">
+          <div class="status-dot" id="telegram-status-dot"></div>
+          <span id="telegram-status-text">Checking...</span>
+        </div>
+        <button class="primary" id="telegram-connect-btn" onclick="connectTelegram()">Connect Telegram</button>
+        <button class="secondary danger-outline hidden" id="telegram-disconnect-btn" onclick="disconnectTelegram()" style="margin-top:16px; margin-left:0;">Disconnect</button>
+        <div class="msg" id="telegram-msg"></div>
+
+        <div class="divider"></div>
+        <button class="link" onclick="toggleTelegramAdvanced()" id="telegram-advanced-toggle">Advanced: enter a bot token/chat ID manually</button>
+        <div id="telegram-advanced" class="hidden" style="margin-top:12px;">
+          <p class="hint">Only needed if you want this workflow to use a different bot than the shared one.</p>
+          <label>Bot token</label>
+          <input type="text" id="set-telegram-token" placeholder="123456789:AA...">
+          <label>Chat ID</label>
+          <input type="text" id="set-telegram-chat" placeholder="987654321">
+          <button class="primary" onclick="saveSettings()">Save manual override</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Google (Gmail &amp; Sheets)</h2>
+        <p class="hint">Needed for the Gmail trigger and the "Append to Sheet" action. Requires a one-time setup in Google Cloud Console - see the README.</p>
+        <div class="status-row" style="margin-top:10px;">
+          <div class="status-dot" id="google-status-dot"></div>
+          <span id="google-status-text">Checking...</span>
+        </div>
+        <button class="primary" id="google-connect-btn" onclick="connectGoogle()">Connect Google Account</button>
+        <button class="secondary danger-outline hidden" id="google-disconnect-btn" onclick="disconnectGoogle()" style="margin-top:16px; margin-left:0;">Disconnect</button>
+
+        <div class="divider"></div>
+        <label style="margin-top:0;">Default Spreadsheet ID</label>
+        <input type="text" id="set-sheet-id" placeholder="The long ID from your Google Sheet's URL">
+        <p class="hint" style="margin-top:6px;">Found between /d/ and /edit in your sheet's URL. Used by "Append to Sheet" actions unless overridden per-workflow.</p>
+        <button class="primary" onclick="saveSettings()">Save Sheets settings</button>
+        <div class="msg" id="settings-msg"></div>
+      </div>
+
+      <div class="panel">
+        <h2>OpenAI (for News Digest)</h2>
+        <p class="hint">Optional. Without a key, News Digest actions still work - they just send a plain headline list instead of an AI summary.</p>
+        <label>OpenAI API key</label>
+        <input type="password" id="set-openai-key" placeholder="sk-...">
+        <button class="primary" onclick="saveSettings()">Save OpenAI key</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const API = window.location.origin;
+let token = localStorage.getItem("autoflow_token") || null;
+let authMode = "login";
+let actionCounter = 0;
+let actions = [];
+
+function showMsg(elId, text, ok) {
+  const el = document.getElementById(elId);
+  el.textContent = text;
+  el.className = "msg show " + (ok ? "ok" : "err");
+}
+
+function toggleAuthMode() {
+  authMode = authMode === "login" ? "register" : "login";
+  document.getElementById("auth-title").textContent = authMode === "login" ? "Log in to AutoFlow" : "Create your AutoFlow account";
+  document.getElementById("auth-submit").textContent = authMode === "login" ? "Log in" : "Register";
+  document.getElementById("auth-toggle-text").textContent = authMode === "login" ? "No account?" : "Already have one?";
+  document.getElementById("auth-toggle-link").textContent = authMode === "login" ? "Register" : "Log in";
+}
+
+async function login() {
+  const email = document.getElementById("auth-email").value.trim();
+  const password = document.getElementById("auth-password").value;
+  if (!email || !password) { showMsg("auth-msg", "Enter both email and password", false); return; }
+
+  if (authMode === "register") {
+    const res = await fetch(API + "/auth/register", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({email: email, password: password})
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(function() { return {}; });
+      showMsg("auth-msg", err.detail || "Registration failed", false);
+      return;
+    }
+  }
+
+  const form = new URLSearchParams();
+  form.append("username", email);
+  form.append("password", password);
+  const res = await fetch(API + "/auth/login", {
+    method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: form
+  });
+  if (!res.ok) { showMsg("auth-msg", "Incorrect email or password", false); return; }
+
+  const data = await res.json();
+  token = data.access_token;
+  localStorage.setItem("autoflow_token", token);
+  localStorage.setItem("autoflow_email", email);
+  enterApp();
+}
+
+function logout() {
+  token = null;
+  localStorage.removeItem("autoflow_token");
+  document.getElementById("app-screen").classList.add("hidden");
+  document.getElementById("auth-screen").classList.remove("hidden");
+}
+
+function authHeaders() {
+  return {"Authorization": "Bearer " + token, "Content-Type": "application/json"};
+}
+
+function switchTab(name) {
+  document.querySelectorAll(".tab-btn").forEach(function(b) { b.classList.toggle("active", b.dataset.tab === name); });
+  document.getElementById("tab-workflows").classList.toggle("hidden", name !== "workflows");
+  document.getElementById("tab-settings").classList.toggle("hidden", name !== "settings");
+  if (name === "settings") loadSettings();
+  if (name === "workflows") loadWorkflows();
+}
+
+async function enterApp() {
+  document.getElementById("auth-screen").classList.add("hidden");
+  document.getElementById("app-screen").classList.remove("hidden");
+  document.getElementById("user-email").textContent = localStorage.getItem("autoflow_email") || "";
+  renderTriggerFields();
+  addAction();
+  loadWorkflows();
+
+  if (window.location.hash === "#google-connected") {
+    switchTab("settings");
+    history.replaceState(null, "", window.location.pathname);
+  } else if (window.location.hash.indexOf("#google-error") === 0) {
+    switchTab("settings");
+    history.replaceState(null, "", window.location.pathname);
+  }
+}
+
+async function loadSettings() {
+  const res = await fetch(API + "/settings/", {headers: authHeaders()});
+  if (!res.ok) return;
+  const data = await res.json();
+  document.getElementById("set-telegram-token").value = data.telegram_bot_token || "";
+  document.getElementById("set-telegram-chat").value = data.telegram_chat_id || "";
+  document.getElementById("set-sheet-id").value = data.sheets_spreadsheet_id || "";
+  document.getElementById("set-openai-key").value = data.openai_api_key || "";
+
+  const tgDot = document.getElementById("telegram-status-dot");
+  const tgText = document.getElementById("telegram-status-text");
+  const tgConnectBtn = document.getElementById("telegram-connect-btn");
+  const tgDisconnectBtn = document.getElementById("telegram-disconnect-btn");
+  if (data.telegram_connected) {
+    tgDot.className = "status-dot on";
+    tgText.textContent = "Connected";
+    tgConnectBtn.classList.add("hidden");
+    tgDisconnectBtn.classList.remove("hidden");
+  } else {
+    tgDot.className = "status-dot off";
+    tgText.textContent = "Not connected";
+    tgConnectBtn.classList.remove("hidden");
+    tgConnectBtn.textContent = "Connect Telegram";
+    tgDisconnectBtn.classList.add("hidden");
+  }
+
+  const dot = document.getElementById("google-status-dot");
+  const text = document.getElementById("google-status-text");
+  const connectBtn = document.getElementById("google-connect-btn");
+  const disconnectBtn = document.getElementById("google-disconnect-btn");
+  if (data.google_connected) {
+    dot.className = "status-dot on";
+    text.textContent = "Connected";
+    connectBtn.textContent = "Reconnect Google Account";
+    disconnectBtn.classList.remove("hidden");
+  } else {
+    dot.className = "status-dot off";
+    text.textContent = "Not connected";
+    connectBtn.textContent = "Connect Google Account";
+    disconnectBtn.classList.add("hidden");
+  }
+}
+
+function toggleTelegramAdvanced() {
+  document.getElementById("telegram-advanced").classList.toggle("hidden");
+}
+
+let telegramPollTimer = null;
+
+async function connectTelegram() {
+  const btn = document.getElementById("telegram-connect-btn");
+  btn.textContent = "Generating link...";
+  const res = await fetch(API + "/settings/telegram/connect", {method: "POST", headers: authHeaders()});
+  const data = await res.json().catch(function() { return {}; });
+
+  if (!res.ok) {
+    showMsg("telegram-msg", data.detail || "Could not start Telegram connect. Is TELEGRAM_BOT_TOKEN set in .env?", false);
+    btn.textContent = "Connect Telegram";
+    return;
+  }
+
+  window.open(data.connect_link, "_blank");
+  btn.textContent = "Waiting for you to tap the link...";
+  showMsg("telegram-msg", "Opened Telegram - tap Start there, this page will update automatically.", true);
+
+  if (telegramPollTimer) clearInterval(telegramPollTimer);
+  telegramPollTimer = setInterval(async function() {
+    const checkRes = await fetch(API + "/settings/", {headers: authHeaders()});
+    const checkData = await checkRes.json();
+    if (checkData.telegram_connected) {
+      clearInterval(telegramPollTimer);
+      telegramPollTimer = null;
+      showMsg("telegram-msg", "Connected!", true);
+      loadSettings();
+    }
+  }, 3000);
+}
+
+async function disconnectTelegram() {
+  await fetch(API + "/settings/telegram/disconnect", {method: "POST", headers: authHeaders()});
+  loadSettings();
+}
+
+async function saveSettings() {
+  const body = {
+    telegram_bot_token: document.getElementById("set-telegram-token").value.trim(),
+    telegram_chat_id: document.getElementById("set-telegram-chat").value.trim(),
+    sheets_spreadsheet_id: document.getElementById("set-sheet-id").value.trim(),
+    openai_api_key: document.getElementById("set-openai-key").value.trim()
+  };
+  const res = await fetch(API + "/settings/", {method: "POST", headers: authHeaders(), body: JSON.stringify(body)});
+  showMsg("settings-msg", res.ok ? "Settings saved." : "Failed to save settings.", res.ok);
+}
+
+function connectGoogle() {
+  window.location.href = API + "/google/connect?token=" + encodeURIComponent(token);
+}
+
+async function disconnectGoogle() {
+  await fetch(API + "/settings/google/disconnect", {method: "POST", headers: authHeaders()});
+  loadSettings();
+}
+
+function renderTriggerFields() {
+  const type = document.getElementById("wf-trigger-type").value;
+  const el = document.getElementById("trigger-fields");
+  if (type === "schedule") {
+    el.innerHTML =
+      '<label>When</label>' +
+      '<select id="trig-schedule-mode" onchange="renderScheduleSubFields()">' +
+      '<option value="interval">Every N minutes</option>' +
+      '<option value="daily">Once a day, at a specific time</option>' +
+      '</select>' +
+      '<div id="schedule-sub-fields"></div>';
+    renderScheduleSubFields();
+  } else if (type === "gmail") {
+    el.innerHTML = '<label>Gmail search query</label>' +
+      '<input type="text" id="trig-query" value="is:unread" placeholder="e.g. is:unread from:results@college.edu">' +
+      '<label>Check every (minutes)</label><input type="number" id="trig-poll-interval" value="5" min="1">';
+  }
+}
+
+function renderScheduleSubFields() {
+  const mode = document.getElementById("trig-schedule-mode").value;
+  const el = document.getElementById("schedule-sub-fields");
+  if (mode === "interval") {
+    el.innerHTML = '<label>Run every (minutes)</label><input type="number" id="trig-interval" value="60" min="1">';
+  } else {
+    el.innerHTML = '<label>Run at (your local time)</label><input type="time" id="trig-run-at" value="07:30">' +
+      '<p class="hint" style="margin-bottom:0;">Fires once per day at this time - only works while the server keeps running (leave your laptop on, or check back once it is up).</p>';
+  }
+}
+
+function addAction() {
+  const id = actionCounter++;
+  actions.push({id: id, type: "telegram"});
+  renderActionList();
+}
+
+function removeAction(id) {
+  actions = actions.filter(function(a) { return a.id !== id; });
+  renderActionList();
+}
+
+function setActionType(id, type) {
+  const a = actions.find(function(a) { return a.id === id; });
+  if (a) a.type = type;
+  renderActionList();
+}
+
+function renderActionList() {
+  const container = document.getElementById("action-list");
+  container.innerHTML = actions.map(function(a, idx) {
+    const removeBtn = actions.length > 1
+      ? '<button class="remove-action" onclick="removeAction(' + a.id + ')">&times;</button>'
+      : "";
+    return '<div class="action-block">' +
+      '<div class="action-header"><span>Action ' + (idx + 1) + '</span>' + removeBtn + '</div>' +
+      '<select onchange="setActionType(' + a.id + ', this.value)">' +
+      '<option value="telegram"' + (a.type === "telegram" ? " selected" : "") + '>Send Telegram message</option>' +
+      '<option value="sheets"' + (a.type === "sheets" ? " selected" : "") + '>Append row to Google Sheet</option>' +
+      '<option value="news_digest"' + (a.type === "news_digest" ? " selected" : "") + '>Fetch &amp; summarize news (RSS)</option>' +
+      '</select>' +
+      renderActionFields(a) +
+      '</div>';
+  }).join("");
+}
+
+function renderActionFields(a) {
+  if (a.type === "telegram") {
+    return '<label>Message text</label>' +
+      '<textarea id="action-' + a.id + '-message" placeholder="Hello! {trigger_message}"></textarea>' +
+      '<p class="hint" style="margin-bottom:0;">Use {trigger_message}, {subject}, {sender}, {snippet}, or {last_action_result} (output of the previous action) as placeholders.</p>';
+  }
+  if (a.type === "sheets") {
+    return '<label>Sheet range</label>' +
+      '<input type="text" id="action-' + a.id + '-range" value="Sheet1!A1">' +
+      '<label>Row values (comma-separated, supports placeholders)</label>' +
+      '<input type="text" id="action-' + a.id + '-columns" value="{subject}, {sender}, {snippet}">' +
+      '<p class="hint" style="margin-bottom:0;">Uses the Spreadsheet ID from Settings unless overridden here.</p>';
+  }
+  if (a.type === "news_digest") {
+    return '<label>RSS feed URLs (one per line)</label>' +
+      '<textarea id="action-' + a.id + '-feeds" placeholder="https://example.com/feed.xml"></textarea>' +
+      '<label style="display:flex; align-items:center; gap:8px; margin-top:14px;">' +
+      '<input type="checkbox" id="action-' + a.id + '-important" style="width:auto;">' +
+      '<span style="margin:0;">Only notify if something major happens (needs OpenAI key)</span>' +
+      '</label>' +
+      '<p class="hint" style="margin-bottom:0;">Summarized with OpenAI if you have added a key in Settings, otherwise sent as a plain headline list. With the checkbox on, routine news gets filtered out silently - no message sent unless something significant shows up.</p>';
+  }
+  return "";
+}
+
+function collectActionConfig(a) {
+  if (a.type === "telegram") {
+    const el = document.getElementById("action-" + a.id + "-message");
+    return {message: (el && el.value) || "Hello from AutoFlow!"};
+  }
+  if (a.type === "sheets") {
+    const colsEl = document.getElementById("action-" + a.id + "-columns");
+    const cols = ((colsEl && colsEl.value) || "{subject},{sender},{snippet}")
+      .split(",").map(function(c) { return c.trim(); }).filter(Boolean);
+    const rangeEl = document.getElementById("action-" + a.id + "-range");
+    return {range: (rangeEl && rangeEl.value) || "Sheet1!A1", columns: cols};
+  }
+  if (a.type === "news_digest") {
+    const feedsEl = document.getElementById("action-" + a.id + "-feeds");
+    const feeds = ((feedsEl && feedsEl.value) || "")
+      .split("\n").map(function(f) { return f.trim(); }).filter(Boolean);
+    const importantEl = document.getElementById("action-" + a.id + "-important");
+    return {feed_urls: feeds, important_only: !!(importantEl && importantEl.checked)};
+  }
+  return {};
+}
+
+async function createWorkflow() {
+  const name = document.getElementById("wf-name").value.trim();
+  const triggerType = document.getElementById("wf-trigger-type").value;
+  if (!name) { showMsg("wf-create-msg", "Give your workflow a name", false); return; }
+  if (actions.length === 0) { showMsg("wf-create-msg", "Add at least one action", false); return; }
+
+  let triggerConfig = {};
+  if (triggerType === "schedule") {
+    const mode = document.getElementById("trig-schedule-mode").value;
+    if (mode === "daily") {
+      triggerConfig = {run_at: document.getElementById("trig-run-at").value || "07:30"};
+    } else {
+      triggerConfig = {interval_minutes: parseInt(document.getElementById("trig-interval").value, 10) || 60};
+    }
+  } else if (triggerType === "gmail") {
+    triggerConfig = {
+      query: document.getElementById("trig-query").value.trim() || "is:unread",
+      poll_interval_minutes: parseInt(document.getElementById("trig-poll-interval").value, 10) || 5
+    };
+  }
+
+  const body = {
+    name: name,
+    trigger_type: triggerType,
+    trigger_config: triggerConfig,
+    actions: actions.map(function(a, idx) {
+      return {action_type: a.type, action_config: collectActionConfig(a), step_order: idx + 1};
+    })
+  };
+
+  const res = await fetch(API + "/workflows/", {method: "POST", headers: authHeaders(), body: JSON.stringify(body)});
+
+  if (res.ok) {
+    showMsg("wf-create-msg", "Workflow created!", true);
+    document.getElementById("wf-name").value = "";
+    actions = [];
+    actionCounter = 0;
+    addAction();
+    loadWorkflows();
+  } else {
+    const err = await res.json().catch(function() { return {}; });
+    showMsg("wf-create-msg", err.detail || "Failed to create workflow.", false);
+  }
+}
+
+async function loadWorkflows() {
+  const res = await fetch(API + "/workflows/", {headers: authHeaders()});
+  const listEl = document.getElementById("workflow-list");
+  if (!res.ok) { listEl.innerHTML = '<div class="empty">Could not load workflows.</div>'; return; }
+
+  const workflows = await res.json();
+  if (workflows.length === 0) {
+    listEl.innerHTML = '<div class="empty">No workflows yet - create one above.</div>';
+    return;
+  }
+
+  listEl.innerHTML = workflows.map(function(wf) {
+    const cfg = JSON.parse(wf.trigger_config || "{}");
+    let triggerLabel;
+    if (wf.trigger_type === "gmail") {
+      triggerLabel = 'Gmail: "' + (cfg.query || "is:unread") + '" every ' + (cfg.poll_interval_minutes || 5) + 'm';
+    } else if (cfg.run_at) {
+      triggerLabel = 'Daily at ' + cfg.run_at;
+    } else {
+      triggerLabel = 'Every ' + (cfg.interval_minutes || "?") + ' min';
+    }
+    const actionChips = wf.actions.map(function(a) {
+      return '<span class="chip">' + a.action_type + '</span>';
+    }).join(" ");
+
+    return '<div class="workflow-card">' +
+      '<div class="row"><div>' +
+      '<div class="name">' + escapeHtml(wf.name) + '</div>' +
+      '<div class="meta"><span class="chip">' + triggerLabel + '</span> ' + actionChips + '</div>' +
+      '</div></div>' +
+      '<div class="actions">' +
+      '<button class="secondary" onclick="runNow(' + wf.id + ')">Run now</button>' +
+      '<button class="secondary" onclick="viewLogs(' + wf.id + ')">View logs</button>' +
+      '<button class="secondary danger-outline" onclick="deleteWorkflow(' + wf.id + ')">Delete</button>' +
+      '</div>' +
+      '<div class="logs-container" id="logs-' + wf.id + '"></div>' +
+      '</div>';
+  }).join("");
+}
+
+async function runNow(id) {
+  const res = await fetch(API + "/workflows/" + id + "/run-now", {method: "POST", headers: authHeaders()});
+  const data = await res.json();
+  alert(data.status === "success" ? "Ran successfully:\n" + data.message : "Failed:\n" + data.message);
+  const logsEl = document.getElementById("logs-" + id);
+  if (logsEl && logsEl.classList.contains("open")) viewLogs(id);
+}
+
+async function deleteWorkflow(id) {
+  if (!confirm("Delete this workflow? This can't be undone.")) return;
+  await fetch(API + "/workflows/" + id, {method: "DELETE", headers: authHeaders()});
+  loadWorkflows();
+}
+
+async function viewLogs(id) {
+  const container = document.getElementById("logs-" + id);
+  if (container.classList.contains("open")) {
+    container.innerHTML = "";
+    container.classList.remove("open");
+    return;
+  }
+  const res = await fetch(API + "/workflows/" + id + "/logs", {headers: authHeaders()});
+  const logs = await res.json();
+  container.innerHTML = logs.length === 0
+    ? '<div class="log-row">No runs yet.</div>'
+    : logs.slice(0, 5).map(function(log) {
+        return '<div class="log-row"><span class="badge ' + log.status + '">' + log.status + '</span> ' +
+          new Date(log.started_at).toLocaleString() + ' \u00b7 ' + log.duration_seconds + 's' +
+          '<div style="margin-top:4px;">' + escapeHtml(log.message || "") + '</div></div>';
+      }).join("");
+  container.classList.add("open");
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+if (token) enterApp();
+</script>
+</body>
+</html>

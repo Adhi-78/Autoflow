@@ -1,0 +1,7 @@
+.env
+autoflow.db
+venv/
+__pycache__/
+credentials.json
+token.json
+telegram_offset.json
