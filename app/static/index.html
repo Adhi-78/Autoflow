@@ -213,11 +213,17 @@
         <input type="text" id="wf-name" placeholder="e.g. College Notice Tracker">
 
         <label>Trigger</label>
-        <select id="wf-trigger-type" onchange="renderTriggerFields()">
+        <select id="wf-trigger-type" onchange="renderTriggerFields(); refreshGoogleAccountPickerVisibility();">
           <option value="schedule">Schedule - run every N minutes</option>
           <option value="gmail">Gmail - new email arrives</option>
         </select>
         <div id="trigger-fields"></div>
+
+        <div id="google-account-picker-wrap" class="hidden">
+          <label>Which Google account?</label>
+          <select id="wf-google-account"></select>
+          <p class="hint" style="margin-bottom:0;">Add more accounts in Settings. Use <code>{account_label}</code> in your message text to show which account triggered it.</p>
+        </div>
 
         <div class="divider"></div>
 
@@ -262,14 +268,15 @@
       </div>
 
       <div class="panel">
-        <h2>Google (Gmail &amp; Sheets)</h2>
-        <p class="hint">Needed for the Gmail trigger and the "Append to Sheet" action. Requires a one-time setup in Google Cloud Console - see the README.</p>
-        <div class="status-row" style="margin-top:10px;">
-          <div class="status-dot" id="google-status-dot"></div>
-          <span id="google-status-text">Checking...</span>
-        </div>
-        <button class="primary" id="google-connect-btn" onclick="connectGoogle()">Connect Google Account</button>
-        <button class="secondary danger-outline hidden" id="google-disconnect-btn" onclick="disconnectGoogle()" style="margin-top:16px; margin-left:0;">Disconnect</button>
+        <h2>Google Accounts (Gmail &amp; Sheets)</h2>
+        <p class="hint">Connect as many Google accounts as you need - each gets its own name, and each workflow picks which one to use. Requires a one-time setup in Google Cloud Console - see the README.</p>
+
+        <div id="google-account-list"></div>
+
+        <label style="margin-top:16px;">Name this account (optional)</label>
+        <input type="text" id="google-new-label" placeholder="e.g. College - leave blank to use the email address">
+        <button class="primary" onclick="connectGoogle()">+ Connect a Google account</button>
+        <div class="msg" id="google-msg"></div>
 
         <div class="divider"></div>
         <label style="margin-top:0;">Default Spreadsheet ID</label>
@@ -358,8 +365,8 @@ function switchTab(name) {
   document.querySelectorAll(".tab-btn").forEach(function(b) { b.classList.toggle("active", b.dataset.tab === name); });
   document.getElementById("tab-workflows").classList.toggle("hidden", name !== "workflows");
   document.getElementById("tab-settings").classList.toggle("hidden", name !== "settings");
-  if (name === "settings") loadSettings();
-  if (name === "workflows") loadWorkflows();
+  if (name === "settings") { loadSettings(); loadGoogleAccounts(); }
+  if (name === "workflows") { loadWorkflows(); populateGoogleAccountPicker(); }
 }
 
 async function enterApp() {
@@ -369,6 +376,7 @@ async function enterApp() {
   renderTriggerFields();
   addAction();
   loadWorkflows();
+  populateGoogleAccountPicker();
 
   if (window.location.hash === "#google-connected") {
     switchTab("settings");
@@ -405,21 +413,27 @@ async function loadSettings() {
     tgDisconnectBtn.classList.add("hidden");
   }
 
-  const dot = document.getElementById("google-status-dot");
-  const text = document.getElementById("google-status-text");
-  const connectBtn = document.getElementById("google-connect-btn");
-  const disconnectBtn = document.getElementById("google-disconnect-btn");
-  if (data.google_connected) {
-    dot.className = "status-dot on";
-    text.textContent = "Connected";
-    connectBtn.textContent = "Reconnect Google Account";
-    disconnectBtn.classList.remove("hidden");
+}
+
+async function loadGoogleAccounts() {
+  const res = await fetch(API + "/google-accounts/", {headers: authHeaders()});
+  const listEl = document.getElementById("google-account-list");
+  if (!res.ok) { listEl.innerHTML = '<div class="empty">Could not load accounts.</div>'; return []; }
+
+  const accounts = await res.json();
+  if (accounts.length === 0) {
+    listEl.innerHTML = '<div class="empty">No Google accounts connected yet.</div>';
   } else {
-    dot.className = "status-dot off";
-    text.textContent = "Not connected";
-    connectBtn.textContent = "Connect Google Account";
-    disconnectBtn.classList.add("hidden");
+    listEl.innerHTML = accounts.map(function(a) {
+      return '<div class="workflow-card" style="padding:12px 14px;">' +
+        '<div class="row">' +
+        '<div><div class="name" style="font-size:13.5px;">' + escapeHtml(a.label) + '</div>' +
+        '<div class="meta">' + escapeHtml(a.email) + '</div></div>' +
+        '<button class="secondary danger-outline" onclick="disconnectGoogleAccount(' + a.id + ')">Disconnect</button>' +
+        '</div></div>';
+    }).join("");
   }
+  return accounts;
 }
 
 function toggleTelegramAdvanced() {
@@ -474,12 +488,15 @@ async function saveSettings() {
 }
 
 function connectGoogle() {
-  window.location.href = API + "/google/connect?token=" + encodeURIComponent(token);
+  const label = document.getElementById("google-new-label").value.trim();
+  const url = API + "/google/connect?token=" + encodeURIComponent(token) + "&label=" + encodeURIComponent(label);
+  window.location.href = url;
 }
 
-async function disconnectGoogle() {
-  await fetch(API + "/settings/google/disconnect", {method: "POST", headers: authHeaders()});
-  loadSettings();
+async function disconnectGoogleAccount(accountId) {
+  if (!confirm("Disconnect this account? Workflows using it will need a new account chosen.")) return;
+  await fetch(API + "/google-accounts/" + accountId, {method: "DELETE", headers: authHeaders()});
+  loadGoogleAccounts();
 }
 
 function renderTriggerFields() {
@@ -516,17 +533,43 @@ function addAction() {
   const id = actionCounter++;
   actions.push({id: id, type: "telegram"});
   renderActionList();
+  refreshGoogleAccountPickerVisibility();
 }
 
 function removeAction(id) {
   actions = actions.filter(function(a) { return a.id !== id; });
   renderActionList();
+  refreshGoogleAccountPickerVisibility();
 }
 
 function setActionType(id, type) {
   const a = actions.find(function(a) { return a.id === id; });
   if (a) a.type = type;
   renderActionList();
+  refreshGoogleAccountPickerVisibility();
+}
+
+function refreshGoogleAccountPickerVisibility() {
+  const triggerType = document.getElementById("wf-trigger-type").value;
+  const hasSheetsAction = actions.some(function(a) { return a.type === "sheets"; });
+  const wrap = document.getElementById("google-account-picker-wrap");
+  const needed = triggerType === "gmail" || hasSheetsAction;
+  wrap.classList.toggle("hidden", !needed);
+}
+
+async function populateGoogleAccountPicker() {
+  const res = await fetch(API + "/google-accounts/", {headers: authHeaders()});
+  if (!res.ok) return;
+  const accounts = await res.json();
+  const select = document.getElementById("wf-google-account");
+  if (accounts.length === 0) {
+    select.innerHTML = '<option value="">No accounts connected - add one in Settings first</option>';
+  } else {
+    select.innerHTML = accounts.map(function(a) {
+      return '<option value="' + a.id + '">' + escapeHtml(a.label) + ' (' + escapeHtml(a.email) + ')</option>';
+    }).join("");
+  }
+  refreshGoogleAccountPickerVisibility();
 }
 
 function renderActionList() {
@@ -615,10 +658,22 @@ async function createWorkflow() {
     };
   }
 
+  const googleAccountWrap = document.getElementById("google-account-picker-wrap");
+  let googleAccountId = null;
+  if (!googleAccountWrap.classList.contains("hidden")) {
+    const val = document.getElementById("wf-google-account").value;
+    googleAccountId = val ? parseInt(val, 10) : null;
+    if (!googleAccountId) {
+      showMsg("wf-create-msg", "This workflow needs a Google account - connect one in Settings first.", false);
+      return;
+    }
+  }
+
   const body = {
     name: name,
     trigger_type: triggerType,
     trigger_config: triggerConfig,
+    google_account_id: googleAccountId,
     actions: actions.map(function(a, idx) {
       return {action_type: a.type, action_config: collectActionConfig(a), step_order: idx + 1};
     })
@@ -650,6 +705,11 @@ async function loadWorkflows() {
     return;
   }
 
+  const accountsRes = await fetch(API + "/google-accounts/", {headers: authHeaders()});
+  const accounts = accountsRes.ok ? await accountsRes.json() : [];
+  const accountLabelById = {};
+  accounts.forEach(function(a) { accountLabelById[a.id] = a.label; });
+
   listEl.innerHTML = workflows.map(function(wf) {
     const cfg = JSON.parse(wf.trigger_config || "{}");
     let triggerLabel;
@@ -660,6 +720,9 @@ async function loadWorkflows() {
     } else {
       triggerLabel = 'Every ' + (cfg.interval_minutes || "?") + ' min';
     }
+    const accountChip = wf.google_account_id
+      ? '<span class="chip">' + escapeHtml(accountLabelById[wf.google_account_id] || "account removed") + '</span>'
+      : "";
     const actionChips = wf.actions.map(function(a) {
       return '<span class="chip">' + a.action_type + '</span>';
     }).join(" ");
@@ -667,7 +730,7 @@ async function loadWorkflows() {
     return '<div class="workflow-card">' +
       '<div class="row"><div>' +
       '<div class="name">' + escapeHtml(wf.name) + '</div>' +
-      '<div class="meta"><span class="chip">' + triggerLabel + '</span> ' + actionChips + '</div>' +
+      '<div class="meta"><span class="chip">' + triggerLabel + '</span> ' + accountChip + ' ' + actionChips + '</div>' +
       '</div></div>' +
       '<div class="actions">' +
       '<button class="secondary" onclick="runNow(' + wf.id + ')">Run now</button>' +

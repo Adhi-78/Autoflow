@@ -14,6 +14,7 @@ Without that file, /google/connect will return a clear error telling you what's 
 """
 
 import json
+import requests
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -23,6 +24,8 @@ from app.config import settings
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/userinfo.email",  # needed to show which account is connected
+    "openid",
 ]
 
 
@@ -51,6 +54,18 @@ def exchange_code_for_credentials(code: str) -> Credentials:
     flow = build_flow()
     flow.fetch_token(code=code)
     return flow.credentials
+
+
+def get_account_email(creds: Credentials) -> str:
+    """Calls Google's userinfo endpoint to find out which account was just connected -
+    used as the default label if the user doesn't type their own name for it."""
+    resp = requests.get(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        headers={"Authorization": f"Bearer {creds.token}"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json().get("email", "unknown@account")
 
 
 def credentials_to_json(creds: Credentials) -> str:

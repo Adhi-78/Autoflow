@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas, auth
-from app.scheduler_engine import build_user_context, run_actions_and_log
+from app.scheduler_engine import build_workflow_context, run_actions_and_log
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -17,11 +17,25 @@ def create_workflow(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(auth.get_current_user),
 ):
+    # If a Google account was chosen, make sure it actually belongs to this user
+    if workflow_in.google_account_id is not None:
+        account = (
+            db.query(models.GoogleAccount)
+            .filter(
+                models.GoogleAccount.id == workflow_in.google_account_id,
+                models.GoogleAccount.user_id == current_user.id,
+            )
+            .first()
+        )
+        if not account:
+            raise HTTPException(status_code=400, detail="Google account not found")
+
     workflow = models.Workflow(
         user_id=current_user.id,
         name=workflow_in.name,
         trigger_type=workflow_in.trigger_type,
         trigger_config=json.dumps(workflow_in.trigger_config),
+        google_account_id=workflow_in.google_account_id,
     )
     db.add(workflow)
     db.commit()
@@ -106,7 +120,7 @@ def run_now(
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    context = build_user_context(db, workflow.user_id, f"Manual run for '{workflow.name}'")
+    context = build_workflow_context(db, workflow, f"Manual run for '{workflow.name}'")
     if workflow.trigger_type == "gmail":
         context.update({
             "subject": "(manual test run - no real email)",

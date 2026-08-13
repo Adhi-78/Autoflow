@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas, auth
-from app.config import settings as app_settings
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -17,7 +16,6 @@ def _to_out(settings_row) -> schemas.SettingsOut:
         telegram_connected=bool(settings_row.telegram_chat_id),
         sheets_spreadsheet_id=settings_row.sheets_spreadsheet_id,
         openai_api_key=settings_row.openai_api_key,
-        google_connected=bool(settings_row.google_credentials_json),
     )
 
 
@@ -64,8 +62,10 @@ def start_telegram_connect(
     Telegram sends /start <code> to the shared bot, and the background
     poller (see telegram_shared_bot.py) picks it up within ~15 seconds."""
     from app.telegram_shared_bot import generate_connect_code, build_connect_link
+    from app.config import settings as app_settings
 
     if not app_settings.TELEGRAM_BOT_TOKEN:
+        from fastapi import HTTPException
         raise HTTPException(
             status_code=500,
             detail="No shared Telegram bot configured. Add TELEGRAM_BOT_TOKEN to your .env file first.",
@@ -82,6 +82,7 @@ def start_telegram_connect(
 
     link = build_connect_link(app_settings.TELEGRAM_BOT_TOKEN, code)
     if not link:
+        from fastapi import HTTPException
         raise HTTPException(
             status_code=500,
             detail="Could not reach Telegram to build the connect link. Double-check TELEGRAM_BOT_TOKEN in .env.",
@@ -99,19 +100,6 @@ def disconnect_telegram(
     if settings_row:
         settings_row.telegram_chat_id = None
         settings_row.telegram_connect_code = None
-        db.commit()
-        db.refresh(settings_row)
-    return _to_out(settings_row)
-
-
-@router.post("/google/disconnect", response_model=schemas.SettingsOut)
-def disconnect_google(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_user),
-):
-    settings_row = db.query(models.Settings).filter(models.Settings.user_id == current_user.id).first()
-    if settings_row:
-        settings_row.google_credentials_json = None
         db.commit()
         db.refresh(settings_row)
     return _to_out(settings_row)

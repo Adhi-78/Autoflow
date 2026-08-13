@@ -1,3 +1,5 @@
+from urllib.parse import quote, unquote
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from jose import jwt, JWTError
@@ -11,11 +13,14 @@ router = APIRouter(prefix="/google", tags=["google"])
 
 
 @router.get("/connect")
-def connect(token: str = Query(..., description="Your AutoFlow login token")):
+def connect(
+    token: str = Query(..., description="Your AutoFlow login token"),
+    label: str = Query("", description="Optional name for this account, e.g. 'College'"),
+):
     """
     Called from a plain link (not a fetch request), since this needs to do a
-    full-page redirect to Google's consent screen. The token is passed as a
-    query param instead of a header for that reason.
+    full-page redirect to Google's consent screen. The token and label are
+    passed as query params instead of a header/body for that reason.
     """
     try:
         payload = jwt.decode(token, app_settings.SECRET_KEY, algorithms=[app_settings.ALGORITHM])
@@ -25,8 +30,12 @@ def connect(token: str = Query(..., description="Your AutoFlow login token")):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token. Log in again.")
 
+    # Carries the user id + chosen label through Google's redirect round-trip.
+    # user_id is always numeric, so splitting on the first ":" in the callback is safe.
+    state = f"{user_id}:{quote(label)}"
+
     try:
-        auth_url = google_oauth.get_authorization_url(state=user_id)
+        auth_url = google_oauth.get_authorization_url(state=state)
     except FileNotFoundError:
         raise HTTPException(
             status_code=500,
@@ -41,18 +50,24 @@ def connect(token: str = Query(..., description="Your AutoFlow login token")):
 @router.get("/callback")
 def callback(code: str = Query(...), state: str = Query(...)):
     """Google redirects here after the user approves access. Exchanges the code
-    for real credentials and saves them for that user."""
+    for real credentials, looks up which account was connected, and saves it
+    as a new GoogleAccount row (doesn't overwrite any existing connections)."""
     db = SessionLocal()
     try:
         creds = google_oauth.exchange_code_for_credentials(code)
-        user_id = int(state)
+        email = google_oauth.get_account_email(creds)
 
-        settings_row = db.query(models.Settings).filter(models.Settings.user_id == user_id).first()
-        if not settings_row:
-            settings_row = models.Settings(user_id=user_id)
-            db.add(settings_row)
+        user_id_str, _, label_encoded = state.partition(":")
+        user_id = int(user_id_str)
+        label = unquote(label_encoded).strip() or email  # falls back to the email itself
 
-        settings_row.google_credentials_json = google_oauth.credentials_to_json(creds)
+        account = models.GoogleAccount(
+            user_id=user_id,
+            label=label,
+            email=email,
+            credentials_json=google_oauth.credentials_to_json(creds),
+        )
+        db.add(account)
         db.commit()
     except Exception as e:
         return RedirectResponse(f"/app/#google-error={str(e)[:100]}")

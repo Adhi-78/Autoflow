@@ -57,7 +57,6 @@ class SettingsOut(BaseModel):
     telegram_connected: bool = False
     sheets_spreadsheet_id: Optional[str] = None
     openai_api_key: Optional[str] = None
-    google_connected: bool = False   # never expose the raw credentials JSON to the frontend
 
     class Config:
         from_attributes = True
@@ -68,6 +67,18 @@ class TelegramConnectOut(BaseModel):
     code: str
 
 
+# ---------- Google Accounts (multi-account support) ----------
+
+class GoogleAccountOut(BaseModel):
+    id: int
+    label: str
+    email: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ---------- Workflows ----------
 
 class WorkflowCreate(BaseModel):
@@ -75,6 +86,7 @@ class WorkflowCreate(BaseModel):
     trigger_type: str          # "schedule" | "webhook" | "gmail"
     trigger_config: dict = {}  # e.g. {"interval_minutes": 5}
     actions: List[ActionCreate] = []
+    google_account_id: Optional[int] = None  # which connected account, if this workflow touches Gmail/Sheets
 
 
 class WorkflowOut(BaseModel):
@@ -83,6 +95,7 @@ class WorkflowOut(BaseModel):
     is_active: bool
     trigger_type: str
     trigger_config: str
+    google_account_id: Optional[int]
     last_run_at: Optional[datetime]
     created_at: datetime
     actions: List[ActionOut] = []

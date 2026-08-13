@@ -27,11 +27,16 @@ class Workflow(Base):
     trigger_type = Column(String, nullable=False)      # "schedule" | "webhook" | "gmail"
     trigger_config = Column(Text, default="{}")         # JSON stored as text
 
+    # Which connected Google account this workflow uses (for a Gmail trigger and/or a
+    # Sheets action within it). Null if the workflow doesn't touch Google at all.
+    google_account_id = Column(Integer, ForeignKey("google_accounts.id"), nullable=True)
+
     last_run_at = Column(DateTime, nullable=True)
     gmail_seen_ids = Column(Text, default="[]")  # JSON list of already-processed Gmail message IDs
     created_at = Column(DateTime, default=datetime.utcnow)
 
     owner = relationship("User", back_populates="workflows")
+    google_account = relationship("GoogleAccount")
     actions = relationship("Action", back_populates="workflow", cascade="all, delete-orphan", order_by="Action.step_order")
     executions = relationship("Execution", back_populates="workflow", cascade="all, delete-orphan")
 
@@ -48,6 +53,21 @@ class Action(Base):
     workflow = relationship("Workflow", back_populates="actions")
 
 
+class GoogleAccount(Base):
+    """A single connected Google account. A user can connect several - each one
+    gets a user-chosen label (or falls back to the account's own email address
+    if no label was given), so workflows can be pointed at a specific one."""
+    __tablename__ = "google_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    label = Column(String, nullable=False)          # user-provided name, or falls back to `email`
+    email = Column(String, nullable=False)           # the actual Google account address, fetched via OAuth
+    credentials_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Settings(Base):
     __tablename__ = "settings"
 
@@ -58,7 +78,8 @@ class Settings(Base):
     telegram_chat_id = Column(String, nullable=True)
     telegram_connect_code = Column(String, nullable=True, unique=True)  # pending "Connect Telegram" code, cleared once matched
 
-    # Phase 2 fields, ready for when Gmail/Sheets get wired in
+    # Superseded by the GoogleAccount table (multi-account support) - kept only
+    # so old rows don't error out; no longer read or written to.
     google_credentials_json = Column(Text, nullable=True)
     sheets_spreadsheet_id = Column(String, nullable=True)
 

@@ -11,16 +11,27 @@ from app.actions.action_runner import run_action
 scheduler = BackgroundScheduler()
 
 
-def build_user_context(db, user_id: int, base_message: str) -> dict:
-    """Gathers a user's saved credentials/settings into the context dict that
-    gets passed through a workflow's actions. Shared by manual runs, schedule
-    triggers, and Gmail triggers so all three behave identically."""
-    user_settings = db.query(models.Settings).filter(models.Settings.user_id == user_id).first()
+def build_workflow_context(db, workflow, base_message: str) -> dict:
+    """Gathers everything a workflow's actions might need - Telegram creds
+    (shared bot fallback + optional per-user override), and whichever Google
+    account this specific workflow is linked to (if any). Shared by manual
+    runs, schedule triggers, and Gmail triggers so all three behave the same."""
+    user_settings = db.query(models.Settings).filter(models.Settings.user_id == workflow.user_id).first()
+
+    google_credentials = None
+    account_label = None
+    if workflow.google_account_id:
+        account = db.query(models.GoogleAccount).filter(models.GoogleAccount.id == workflow.google_account_id).first()
+        if account:
+            google_credentials = account.credentials_json
+            account_label = account.label
+
     return {
         "trigger_message": base_message,
         "telegram_bot_token": user_settings.telegram_bot_token if user_settings else None,
         "telegram_chat_id": user_settings.telegram_chat_id if user_settings else None,
-        "google_credentials": user_settings.google_credentials_json if user_settings else None,
+        "google_credentials": google_credentials,
+        "account_label": account_label or "",
         "sheets_spreadsheet_id": user_settings.sheets_spreadsheet_id if user_settings else None,
         "openai_api_key": user_settings.openai_api_key if user_settings else None,
         "last_action_result": "",
@@ -102,7 +113,7 @@ def _is_due_daily_time(workflow, run_at_str: str) -> bool:
 def _check_schedule_workflow(db, workflow):
     if not _is_due(workflow, default_interval_minutes=60):
         return
-    context = build_user_context(db, workflow.user_id, f"Scheduled trigger for '{workflow.name}'")
+    context = build_workflow_context(db, workflow, f"Scheduled trigger for '{workflow.name}'")
     run_actions_and_log(db, workflow, context)
     workflow.last_run_at = datetime.now()
     db.commit()
@@ -112,11 +123,15 @@ def _check_gmail_workflow(db, workflow):
     if not _is_due(workflow, default_interval_minutes=5):
         return
 
-    user_settings = db.query(models.Settings).filter(models.Settings.user_id == workflow.user_id).first()
     workflow.last_run_at = datetime.now()
 
-    if not user_settings or not user_settings.google_credentials_json:
-        # Not connected yet - nothing to check, try again next poll instead of erroring
+    if not workflow.google_account_id:
+        # No Google account chosen for this workflow yet - nothing to check
+        db.commit()
+        return
+
+    account = db.query(models.GoogleAccount).filter(models.GoogleAccount.id == workflow.google_account_id).first()
+    if not account:
         db.commit()
         return
 
@@ -127,7 +142,7 @@ def _check_gmail_workflow(db, workflow):
     query = config.get("query", "is:unread")
 
     try:
-        creds = credentials_from_json(user_settings.google_credentials_json)
+        creds = credentials_from_json(account.credentials_json)
         emails = fetch_unread_emails(creds, query=query, max_results=5)
     except Exception:
         # Auth hiccup or network issue - skip this poll, try again next time
@@ -139,7 +154,7 @@ def _check_gmail_workflow(db, workflow):
     new_emails = [e for e in emails if e["id"] not in seen_ids]
 
     for email in new_emails:
-        context = build_user_context(db, workflow.user_id, f"New email: {email['subject']}")
+        context = build_workflow_context(db, workflow, f"New email: {email['subject']}")
         context.update({
             "subject": email["subject"],
             "sender": email["sender"],

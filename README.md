@@ -62,17 +62,20 @@ Newer `bcrypt` (v5) breaks `passlib`'s backend detection and throws a
 
 ---
 
-## 3. Set up your Telegram bot (2 minutes)
+## 3. Set up your shared Telegram bot (one-time, ~2 minutes)
+
+As of this version, users don't create their own bot or paste a chat ID — they just click
+"Connect Telegram" and tap a link. You (the app owner) still need ONE bot for everyone to connect to:
 
 1. Open Telegram, search for **@BotFather**
 2. Send `/newbot`, follow the prompts, name it whatever you like
 3. BotFather gives you a token like `123456:ABC-DEF...` → put this in `.env` as `TELEGRAM_BOT_TOKEN`
-4. Send your new bot any message (e.g. "hi") — this lets it know where to reply
-5. Visit this URL in your browser (replace `<TOKEN>`):
-   ```
-   https://api.telegram.org/bot<TOKEN>/getUpdates
-   ```
-6. Find `"chat":{"id": 123456789, ...}` in the response → that number is your `TELEGRAM_CHAT_ID`
+4. That's it — no chat ID needed here. Each user gets their own chat ID automatically the moment
+   they tap the connect link and message the bot.
+
+**Why this works with one bot for everyone:** Telegram gives every person-to-bot conversation its
+own unique chat ID, even though it's the same bot. This is how Zapier/IFTTT-style "Connect Telegram"
+buttons work under the hood — you never create your own bot when connecting those services either.
 
 ---
 
@@ -184,10 +187,10 @@ button in Settings will work.
 ## 8. Using the web UI
 
 1. Start the server: `uvicorn app.main:app --reload`
-2. Open **http://127.0.0.1:8000/app**
-3. Register/log in
+2. Open **http://127.0.0.1:8000/app**3. Register/log in
 4. Go to **Settings**:
-   - **Telegram** — paste your bot token + chat ID
+   - **Telegram** — click "Connect Telegram", a Telegram chat opens automatically, tap **Start**,
+     and the page updates to "Connected" within a few seconds (no copying tokens/chat IDs)
    - **Google** — click "Connect Google Account" (needs `credentials.json` from step 7 above),
      approve access in the Google popup, you'll land back on Settings showing "Connected"
    - **OpenAI** — optional, paste an API key if you want AI-summarized news digests
@@ -207,12 +210,130 @@ button in Settings will work.
 action with the message set to `{last_action_result}`. The digest text automatically flows into
 the Telegram message.
 
+## 8b. Viewing it on your phone (same WiFi)
+
+The page itself is now mobile-responsive, but it still only runs on your laptop — your phone just
+needs to be told where to find it, on the same WiFi network:
+
+1. Find your laptop's local IP:
+   - Windows: run `ipconfig` in the terminal, look for "IPv4 Address" (e.g. `192.168.1.5`)
+2. Start the server so it accepts connections from other devices, not just itself:
+   ```
+   uvicorn app.main:app --host 0.0.0.0 --reload
+   ```
+3. On your phone (same WiFi), open: `http://<your-laptop-ip>:8000/app` (e.g. `http://192.168.1.5:8000/app`)
+
+**Important limitation:** this still requires your laptop to be on, awake, and running the server.
+It is not the same as deploying the app to the internet — closing your laptop or losing WiFi breaks
+phone access immediately. True "works from anywhere, laptop off" access requires actually deploying
+to a cloud host (Render, Railway, etc.), which is a separate, larger step — not needed for local
+development or demoing the project.
+
+## 8c. Connecting multiple Google accounts
+
+You're not limited to one Google account. Go to Settings → Google Accounts, optionally type a
+name for the account you're about to connect (e.g. "College"), then click "+ Connect a Google
+account". Leave the name blank and it'll just use that account's email address as its label.
+
+Repeat for a second, third, etc. account - each connect just adds a new one, it doesn't replace
+what's already connected.
+
+When you build a Gmail-trigger workflow (or add a "Append to Sheet" action), a "Which Google
+account?" dropdown appears, letting you pick which connected account that specific workflow uses.
+This means you can genuinely monitor multiple inboxes at once - e.g. a College Notices workflow
+watching your college Gmail, and a separate Personal workflow watching your personal Gmail,
+both checked independently by the same background scheduler.
+
+Use `{account_label}` as a placeholder in your Telegram message text to show which account a
+notification came from, e.g.: `[{account_label}] New notice: {subject}`
+
+## 10. Deploying it (so it works from any device, laptop off)
+
+This makes the app reachable from anywhere, not just your laptop on your WiFi. It's a bigger step
+than anything above — budget a real chunk of time, not a quick toggle. Uses **Render** (free tier)
+and **GitHub** (to hold your code, since Render deploys from a Git repo).
+
+### Step 1 — Push your code to GitHub
+
+1. Install Git if you don't have it: https://git-scm.com/downloads
+2. Create a free GitHub account at https://github.com if you don't have one
+3. Create a new repository on GitHub (empty, no README) — call it `autoflow`
+4. In your project folder terminal:
+   ```powershell
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git branch -M main
+   git remote add origin https://github.com/<your-username>/autoflow.git
+   git push -u origin main
+   ```
+
+**Important — don't commit secrets.** Before step 4, create a `.gitignore` file in your project root
+containing:
+```
+.env
+autoflow.db
+venv/
+__pycache__/
+credentials.json
+token.json
+telegram_offset.json
+```
+This keeps your secrets and local database out of the public repo.
+
+### Step 2 — Create a Render account and database
+
+1. Go to https://render.com, sign up (free, can use your GitHub account to sign in)
+2. **New → PostgreSQL** → give it a name, free tier → Create
+3. Once created, copy the **"Internal Database URL"** — you'll need it in Step 3
+
+### Step 3 — Create the web service
+
+1. **New → Web Service** → connect your GitHub repo
+2. Settings:
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+3. Under **Environment**, add these variables:
+   - `SECRET_KEY` — generate one locally with the same command from section 2
+   - `DATABASE_URL` — paste the Internal Database URL from Step 2
+   - `TELEGRAM_BOT_TOKEN` — your existing bot token
+   - `GOOGLE_REDIRECT_URI` — `https://<your-render-app-name>.onrender.com/google/callback`
+     (you'll know the exact URL once Render assigns it after first deploy)
+4. Click **Create Web Service** — Render will build and deploy automatically
+
+### Step 4 — Add your Google credentials securely
+
+Don't commit `credentials.json` to GitHub. Instead:
+1. In Render, go to your service → **Environment → Secret Files**
+2. Add a secret file named `credentials.json`, paste its contents
+3. Set the env var `GOOGLE_CREDENTIALS_FILE` to whatever path Render mounts it at (shown in the
+   Secret Files section, typically `/etc/secrets/credentials.json`)
+
+### Step 5 — Update Google Cloud Console
+
+Go back to your OAuth client in Google Cloud Console and add your new Render URL as an authorized
+redirect URI (in addition to, or instead of, the localhost one):
+```
+https://<your-render-app-name>.onrender.com/google/callback
+```
+
+### Step 6 — Test it
+
+Open `https://<your-render-app-name>.onrender.com/app` from your phone, anywhere, laptop closed.
+Register, connect Telegram/Google, create a workflow.
+
+### Known limitation of the free tier
+
+Render's free web services "sleep" after 15 minutes of no traffic, which pauses your background
+scheduler along with everything else — so a scheduled workflow might not fire exactly on time if
+nobody's visited the site recently. A free external ping service (like UptimeRobot, hitting your
+`/` endpoint every 10 minutes) keeps it awake continuously. This is a well-known workaround, not
+something unique to this project — the same limitation applies to any app on Render's free tier.
+
 ## 9. Next steps (in order)
 
 1. **Set up Google OAuth** (section 7 above) and connect your account through Settings.
 2. **Build your real workflows** — a College Notice Tracker (Gmail → Sheets → Telegram) and a
    Morning News Digest (Schedule → News Digest → Telegram) are good first ones to try.
-3. **Only after those work and you have spare time:** swap SQLite → PostgreSQL, add Celery + Redis
-   for background task queueing instead of running actions synchronously, containerize with Docker.
-   This is optional infrastructure polish — skip it if you're short on time, since it doesn't add
-   any new capability, just changes what's running underneath.
+3. **Deploy it** (section 10) once everything works locally and you actually want laptop-independent
+   access — not required for demoing the project in an interview.
