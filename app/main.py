@@ -39,11 +39,3 @@ def root():
     return {"status": "AutoFlow is running", "docs": "/docs", "app": "/app"}
 
 
-@app.get("/_reset_db_once_38x9k2")
-def _reset_db_once():
-    """TEMPORARY: resets all tables (drops + recreates). Only exists because
-    Render's free tier has no Shell access to run this manually. Remove this
-    route after using it once - see README."""
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    return {"status": "Database reset complete. Remove this endpoint from main.py now."}
