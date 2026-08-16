@@ -46,7 +46,7 @@ checking required.
 
 ---
 
-## Installation
+## Installation steps
 
 ### Prerequisites
 - Python 3.12+
