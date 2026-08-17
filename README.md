@@ -42,7 +42,7 @@ checking required.
 **Database:** PostgreSQL (production), SQLite (local development)
 **Integrations:** Google OAuth2 (Gmail API, Sheets API), Telegram Bot API, OpenAI API, RSS (feedparser)
 **Frontend:** HTML, CSS, vanilla JavaScript
-**Deployment:** Render (web service + managed PostgreSQL), GitHub-integrated CI deploys, UptimeRobot
+**Deployment:** Render (web service + managed PostgreSQL), Auto-deploy on push, UptimeRobot
 
 ---
 
